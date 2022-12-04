@@ -49,8 +49,15 @@ int main() {
         }
 
         Json::Value jsonData;
-        Json::Reader jsonReader;
-        jsonReader.parse(result, jsonData);
+        Json::CharReaderBuilder builder;
+        JSONCPP_STRING jsonErrorMessage;
+        const auto rawJsonLength = static_cast<int>(result.length());
+        const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+        if (!reader->parse(result.c_str(), result.c_str() + rawJsonLength, &jsonData,
+                           &jsonErrorMessage)) {
+            std::cout << "error" << std::endl;
+            return EXIT_FAILURE;
+        }
 
         if (!isIp) {
             lines += fmt::format("plug,id={} value={:.2f},temperature={:.2f},total={}\n", device,
