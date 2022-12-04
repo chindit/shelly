@@ -7,7 +7,7 @@
 Config::Config() {
     settings = new std::vector<std::pair<std::string, std::string>>;
 
-    std::ifstream configFile("config.conf");
+    std::ifstream configFile("/home/david/config.conf");
 
     if (configFile.is_open()) {
         std::string lineContent;

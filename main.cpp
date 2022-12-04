@@ -28,7 +28,7 @@ int main() {
         auto *reqwest = new Request();
         std::string device = devicesList.substr(0, pos);
         result = "";
-        isIp = count(device.begin(),device.end(),'.') == 3;
+        isIp = count(device.begin(), device.end(), '.') == 3;
         if (isIp) {
             url = device + "/status";
             body = "";
@@ -53,9 +53,14 @@ int main() {
         jsonReader.parse(result, jsonData);
 
         if (!isIp) {
-            lines += fmt::format("plug,id={} value={:.2f},temperature={:.2f}\n", device,  jsonData["data"]["device_status"]["meters"][0]["power"].asFloat(), jsonData["data"]["device_status"]["temperature"].asFloat());
+            lines += fmt::format("plug,id={} value={:.2f},temperature={:.2f},total={}\n", device,
+                                 jsonData["data"]["device_status"]["meters"][0]["power"].asFloat(),
+                                 jsonData["data"]["device_status"]["temperature"].asFloat(),
+                                 jsonData["data"]["device_status"]["temperature"]["meters"][0]["total"].asInt());
         } else {
-            lines += fmt::format("plug,id={} value={:.2f},temperature={:.2f}\n", jsonData["mac"].asString(),  jsonData["meters"][0]["power"].asFloat(), jsonData["temperature"].asFloat());
+            lines += fmt::format("plug,id={} value={:.2f},temperature={:.2f},total={}\n", jsonData["mac"].asString(),
+                                 jsonData["meters"][0]["power"].asFloat(), jsonData["temperature"].asFloat(),
+                                 jsonData["meters"][0]["total"].asInt());
         }
 
         std::cout << "Device checked" << std::endl;
@@ -66,7 +71,9 @@ int main() {
     curlHeaders.emplace_back("Authorization", "Token " + configuration.get("influx_token"));
     curlHeaders.emplace_back("Content-Type", "text/plain; charset=utf-8");
     curlHeaders.emplace_back("Accept", "application/json");
-    response = reqwest->call(configuration.get("influx_url") + "/api/v2/write?org=" + configuration.get("influx_org") + "&bucket=" + configuration.get("influx_bucket"), curlHeaders, lines, result);
+    response = reqwest->call(
+            configuration.get("influx_url") + "/api/v2/write?org=" + configuration.get("influx_org") + "&bucket=" +
+            configuration.get("influx_bucket"), curlHeaders, lines, result);
 
     if (response) {
         std::cout << "Data successfully sent" << std::endl;
