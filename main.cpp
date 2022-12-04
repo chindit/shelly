@@ -56,7 +56,7 @@ int main() {
             lines += fmt::format("plug,id={} value={:.2f},temperature={:.2f},total={}\n", device,
                                  jsonData["data"]["device_status"]["meters"][0]["power"].asFloat(),
                                  jsonData["data"]["device_status"]["temperature"].asFloat(),
-                                 jsonData["data"]["device_status"]["temperature"]["meters"][0]["total"].asInt());
+                                 jsonData["data"]["device_status"]["meters"][0]["total"].asInt());
         } else {
             lines += fmt::format("plug,id={} value={:.2f},temperature={:.2f},total={}\n", jsonData["mac"].asString(),
                                  jsonData["meters"][0]["power"].asFloat(), jsonData["temperature"].asFloat(),
