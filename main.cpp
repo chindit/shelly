@@ -2,6 +2,7 @@
 #include <ctime>
 #include <jsoncpp/json/json.h>
 #include <fmt/format.h>
+#include <pqxx/pqxx>
 
 #include "Request.h"
 #include "Config.h"
@@ -10,13 +11,13 @@ int main() {
     Config configuration = Config();
 
     // List of all devices
-    std::string devicesList = configuration.get("devices");
+    std::string devicesList = configuration.get("devices") + ",";
     // Delimiter for devices (CSV line
     std::string delimiter = ",";
     // Pointer for CSV device iteration
     size_t pos = 0;
     // Variables used to retrieve device infos
-    std::string token, url, result, body, lines;
+    std::string token, url, result, body, lines, sqlLines;
     // Headers (empty for info retrieval)
     std::vector<std::pair<std::string, std::string>> curlHeaders;
     // Wether device is IP or not
@@ -64,14 +65,28 @@ int main() {
                                  jsonData["data"]["device_status"]["meters"][0]["power"].asFloat(),
                                  jsonData["data"]["device_status"]["temperature"].asFloat(),
                                  jsonData["data"]["device_status"]["meters"][0]["total"].asInt());
+            sqlLines += fmt::format("('plug', '{}', '{:.2f}', '{:.2f}', '{}'),", device,
+                                    jsonData["data"]["device_status"]["meters"][0]["power"].asFloat(),
+                                    jsonData["data"]["device_status"]["temperature"].asFloat(),
+                                    jsonData["data"]["device_status"]["meters"][0]["total"].asInt());
         } else {
             lines += fmt::format("plug,id={} value={:.2f},temperature={:.2f},total={}\n", jsonData["mac"].asString(),
                                  jsonData["meters"][0]["power"].asFloat(), jsonData["temperature"].asFloat(),
                                  jsonData["meters"][0]["total"].asInt());
+            sqlLines += fmt::format("('plug', '{}', '{:.2f}', '{:.2f}', '{}'),", jsonData["mac"].asString(),
+                                       jsonData["meters"][0]["power"].asFloat(), jsonData["temperature"].asFloat(),
+                                       jsonData["meters"][0]["total"].asInt());
         }
 
         std::cout << "Device checked" << std::endl;
     }
+
+    // Sending data to PostgreSQL
+    sqlLines.pop_back();
+    pqxx::connection c{configuration.get("psql_uri")};
+    pqxx::work txn{c};
+    txn.exec0("INSERT INTO shelly (type, device_id, power, temperature, total) VALUES " + sqlLines);
+    txn.commit();
 
     // Sending data to InfluxDB
     auto *reqwest = new Request();
