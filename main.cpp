@@ -89,18 +89,20 @@ int main() {
     txn.commit();
 
     // Sending data to InfluxDB
-    auto *reqwest = new Request();
-    curlHeaders.emplace_back("Authorization", "Token " + configuration.get("influx_token"));
-    curlHeaders.emplace_back("Content-Type", "text/plain; charset=utf-8");
-    curlHeaders.emplace_back("Accept", "application/json");
-    response = reqwest->call(
-            configuration.get("influx_url") + "/api/v2/write?org=" + configuration.get("influx_org") + "&bucket=" +
-            configuration.get("influx_bucket"), curlHeaders, lines, result);
+    if (configuration.get("influx_token").length() > 0) {
+        auto *reqwest = new Request();
+        curlHeaders.emplace_back("Authorization", "Token " + configuration.get("influx_token"));
+        curlHeaders.emplace_back("Content-Type", "text/plain; charset=utf-8");
+        curlHeaders.emplace_back("Accept", "application/json");
+        response = reqwest->call(
+                configuration.get("influx_url") + "/api/v2/write?org=" + configuration.get("influx_org") + "&bucket=" +
+                configuration.get("influx_bucket"), curlHeaders, lines, result);
 
-    if (response) {
-        std::cout << "Data successfully sent" << std::endl;
-    } else {
-        std::cout << "Error while sending data" << std::endl;
+        if (response) {
+            std::cout << "Data successfully sent" << std::endl;
+        } else {
+            std::cout << "Error while sending data" << std::endl;
+        }
     }
 
     std::cout << "Exiting, bye!" << std::endl;
