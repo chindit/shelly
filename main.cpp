@@ -2,6 +2,7 @@
 #include <fmt/format.h>
 #include <pqxx/pqxx>
 #include <pwd.h>
+#include <unistd.h>
 
 #include "Config.h"
 #include "Model/DeviceInfo.h"
