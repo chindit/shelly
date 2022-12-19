@@ -48,8 +48,8 @@ void Cache::write() {
     std::ofstream file_id;
     file_id.open(path);
 
-    Json::StyledWriter styledWriter;
-    file_id << styledWriter.write(this->cache);
+    Json::StreamWriterBuilder styledWriter;
+    styledWriter.newStreamWriter()->write(this->cache, &file_id);
 
     file_id.close();
 }
