@@ -13,7 +13,7 @@
 
 class Config {
 public:
-    Config();
+    explicit Config(std::string& homeDirectory);
     std::string get(const char* name);
 private:
     std::vector<std::pair<std::string, std::string>> *settings;

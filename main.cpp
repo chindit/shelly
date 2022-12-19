@@ -1,17 +1,21 @@
 #include <iostream>
-#include <ctime>
-#include <jsoncpp/json/json.h>
 #include <fmt/format.h>
 #include <pqxx/pqxx>
+#include <pwd.h>
 
-#include "Request.h"
 #include "Config.h"
+#include "Model/DeviceInfo.h"
+#include "DeviceFetcher.h"
+#include "Cache.h"
 
 int main() {
-    Config configuration = Config();
+    // Get home directory
+    std::string homeDirectory = getpwuid(getuid())->pw_dir;
+    Config configuration = Config(homeDirectory);
 
     // List of all devices
-    std::string devicesList = configuration.get("devices") + ",";
+    std::string deviceList = configuration.get("devices") + ",";
+
     // Delimiter for devices (CSV line
     std::string delimiter = ",";
     // Pointer for CSV device iteration
@@ -20,90 +24,60 @@ int main() {
     std::string token, url, result, body, lines, sqlLines;
     // Headers (empty for info retrieval)
     std::vector<std::pair<std::string, std::string>> curlHeaders;
-    // Wether device is IP or not
+    // Whether device is IP or not
     bool isIp = true, response = false;
+    std::vector<DeviceInfo> devices;
 
-    std::cout << "Starting data retrieving" << std::endl;
+    std::cout << "Starting data retrieving for plugs" << std::endl;
 
-    while ((pos = devicesList.find(delimiter)) != std::string::npos) {
-        auto *reqwest = new Request();
-        std::string device = devicesList.substr(0, pos);
-        result = "";
-        isIp = count(device.begin(), device.end(), '.') == 3;
-        if (isIp) {
-            url = device + "/status";
-            body = "";
-        } else {
-            url = configuration.get("shelly_server") + "/device/status?id=" + device;
-            body = "auth_key=" + configuration.get("shelly_key");
+    Cache cache = Cache(homeDirectory + "/.cache/shelly/cache.json");
+    DeviceFetcher fetcher = DeviceFetcher(configuration.get("shelly_server"), configuration.get("shelly_key"), cache);
+
+    // Fetch plugs
+    while ((pos = deviceList.find(delimiter)) != std::string::npos) {
+        std::string device = deviceList.substr(0, pos);
+        deviceList.erase(0, pos + delimiter.length());
+
+        if (cache.exists(device) && !cache.needSync(device)) {
+            std::cout << "Cache detected for device " << device << std::endl;
+            continue;
         }
-        devicesList.erase(0, pos + delimiter.length());
-
-        std::cout << "Checkin device " << device << std::endl;
-
-        response = reqwest->call(url, curlHeaders, body, result);
-        delete reqwest;
-
-        if (!response || result.length() == 0) {
+        auto infos = fetcher.fetch(device);
+        if (infos.type == DeviceType::FAILED) {
             std::cout << "Unable to retrieve data for device " << device << std::endl;
             continue;
         }
-
-        Json::Value jsonData;
-        Json::CharReaderBuilder builder;
-        JSONCPP_STRING jsonErrorMessage;
-        const auto rawJsonLength = static_cast<int>(result.length());
-        const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
-        if (!reader->parse(result.c_str(), result.c_str() + rawJsonLength, &jsonData,
-                           &jsonErrorMessage)) {
-            std::cout << "error" << std::endl;
-            return EXIT_FAILURE;
+        if (infos.type == DeviceType::SKIPPED) {
+            std::cout << "Sensor " << device << " was not updated." << std::endl;
+            continue;
         }
 
-        if (!isIp) {
-            lines += fmt::format("plug,id={} value={:.2f},temperature={:.2f},total={}\n", device,
-                                 jsonData["data"]["device_status"]["meters"][0]["power"].asFloat(),
-                                 jsonData["data"]["device_status"]["temperature"].asFloat(),
-                                 jsonData["data"]["device_status"]["meters"][0]["total"].asInt());
-            sqlLines += fmt::format("('plug', '{}', '{:.2f}', '{:.2f}', '{}'),", device,
-                                    jsonData["data"]["device_status"]["meters"][0]["power"].asFloat(),
-                                    jsonData["data"]["device_status"]["temperature"].asFloat(),
-                                    jsonData["data"]["device_status"]["meters"][0]["total"].asInt());
-        } else {
-            lines += fmt::format("plug,id={} value={:.2f},temperature={:.2f},total={}\n", jsonData["mac"].asString(),
-                                 jsonData["meters"][0]["power"].asFloat(), jsonData["temperature"].asFloat(),
-                                 jsonData["meters"][0]["total"].asInt());
-            sqlLines += fmt::format("('plug', '{}', '{:.2f}', '{:.2f}', '{}'),", jsonData["mac"].asString(),
-                                       jsonData["meters"][0]["power"].asFloat(), jsonData["temperature"].asFloat(),
-                                       jsonData["meters"][0]["total"].asInt());
-        }
+        devices.push_back(infos);
+        cache.put(device, infos);
 
-        std::cout << "Device checked" << std::endl;
+        std::cout << "DeviceFetcher checked" << std::endl;
+    }
+
+    cache.write();
+
+    // Prepare SQL Inserts
+    for(const DeviceInfo& infos : devices) {
+        sqlLines += fmt::format("('{}', '{}', '{:.2f}', '{:.2f}', '{}', '{}'),",
+                                infos.stringType,
+                                infos.id,
+                                infos.power,
+                                infos.temperature,
+                                infos.total,
+                                infos.data
+        );
     }
 
     // Sending data to PostgreSQL
     sqlLines.pop_back();
     pqxx::connection c{configuration.get("psql_uri")};
     pqxx::work txn{c};
-    txn.exec0("INSERT INTO shelly (type, device_id, power, temperature, total) VALUES " + sqlLines);
+    txn.exec0("INSERT INTO shelly (type, device_id, power, temperature, total, data) VALUES " + sqlLines);
     txn.commit();
-
-    // Sending data to InfluxDB
-    if (configuration.get("influx_token").length() > 0) {
-        auto *reqwest = new Request();
-        curlHeaders.emplace_back("Authorization", "Token " + configuration.get("influx_token"));
-        curlHeaders.emplace_back("Content-Type", "text/plain; charset=utf-8");
-        curlHeaders.emplace_back("Accept", "application/json");
-        response = reqwest->call(
-                configuration.get("influx_url") + "/api/v2/write?org=" + configuration.get("influx_org") + "&bucket=" +
-                configuration.get("influx_bucket"), curlHeaders, lines, result);
-
-        if (response) {
-            std::cout << "Data successfully sent" << std::endl;
-        } else {
-            std::cout << "Error while sending data" << std::endl;
-        }
-    }
 
     std::cout << "Exiting, bye!" << std::endl;
 

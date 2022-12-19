@@ -4,10 +4,10 @@
 
 #include "Config.h"
 
-Config::Config() {
+Config::Config(std::string& homeDirectory) {
     settings = new std::vector<std::pair<std::string, std::string>>;
 
-    std::ifstream configFile("/home/david/config.conf");
+    std::ifstream configFile(homeDirectory + "/.config/shelly/config.conf");
 
     if (configFile.is_open()) {
         std::string lineContent;
